@@ -136,6 +136,17 @@ Fork 之后先打开自己仓库的 `Actions` 页面，进入 `Epic Awesome Game
 
 ![GitHub Actions Secrets 配置示例](docs/images/tutorial/step2-actions-secrets.png)
 
+如果你使用 `DeepSeek`，请按下面这组填写：
+
+| 配置名 | 示例值 |
+| --- | --- |
+| `LLM_PROVIDER` | deepseek |
+| `DEEPSEEK_API_KEY` | 你的 DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | https://api.deepseek.com |
+| `DEEPSEEK_MODEL` | deepseek-v4-flash-vision-exp |
+
+该视觉实验模型已验证支持 Base64 图片、思考模式以及 JSON Output。简单分类和点选使用低思考强度，复杂拖拽使用高思考强度。
+
 如果你使用 `Gemini 官方接口`，请按下面这组填写：
 
 **如果你把 `LLM_PROVIDER` 设为 `gemini`，就必须填写 `GEMINI_API_KEY`；无需新建并填写 `GLM_API_KEY`。**
@@ -160,13 +171,14 @@ Fork 之后先打开自己仓库的 `Actions` 页面，进入 `Epic Awesome Game
 
 - 当前代码同时支持 `Gemini 官方接口` 和 `AiHubMix` 这类 Gemini 兼容接口。
 - 变量名是 `GEMINI_BASE_URL`，不是 `GEMINI_BASE_MODEL`。
-- `LLM_PROVIDER=glm` 时，请填写 `GLM_API_KEY`，无需新建并填写 `GEMINI_API_KEY`。
-- `LLM_PROVIDER=gemini` 时，请填写 `GEMINI_API_KEY`，无需新建并填写 `GLM_API_KEY`。
+- `LLM_PROVIDER=glm` 时，请填写 `GLM_API_KEY`。
+- `LLM_PROVIDER=deepseek` 时，请填写 `DEEPSEEK_API_KEY`。
+- `LLM_PROVIDER=gemini` 时，请填写 `GEMINI_API_KEY`。
 - 使用 `Gemini 官方接口` 时，`GEMINI_BASE_URL` 应留空，让 SDK 直接走 Google 官方默认地址。
 - 使用 `AiHubMix` 或其他 Gemini 兼容中转接口时，再填写对应的 `GEMINI_BASE_URL`。
 - 对 `GLM` 路线，推荐把 `GLM_MODEL` 设为 `glm-4.6v`；`glm-4.6v-flash` 在高峰期可能报“该模型当前访问量过大，请您稍后重试”。
 - 对 `Gemini` / `AiHubMix` 路线，建议先用 `GEMINI_MODEL=gemini-2.5-pro` 作为起步配置。
-- `CHALLENGE_CLASSIFIER_MODEL`、`IMAGE_CLASSIFIER_MODEL`、`SPATIAL_POINT_REASONER_MODEL`、`SPATIAL_PATH_REASONER_MODEL` 如果留空，会自动跟随当前 provider 的默认模型，也就是 `GLM_MODEL` 或 `GEMINI_MODEL`。
+- `CHALLENGE_CLASSIFIER_MODEL`、`IMAGE_CLASSIFIER_MODEL`、`SPATIAL_POINT_REASONER_MODEL`、`SPATIAL_PATH_REASONER_MODEL` 如果留空，会自动跟随当前 provider 的默认模型，也就是 `GLM_MODEL`、`DEEPSEEK_MODEL` 或 `GEMINI_MODEL`。
 - 如果你暂时不想细分模型，最简单的做法就是让上面 4 个覆盖项全部留空。
 - 走 `GLM` 路线时不需要额外再填 `GEMINI_API_KEY`。
 

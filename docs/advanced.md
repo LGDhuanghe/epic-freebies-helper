@@ -24,7 +24,7 @@
 | [`app/services/epic_authorization_service.py`](../app/services/epic_authorization_service.py) | 登录、登录结果监听和登录后验证 |
 | [`app/services/epic_games_service.py`](../app/services/epic_games_service.py) | 周免发现、商品页进入、加购、结账、checkout 验证处理 |
 | [`app/settings.py`](../app/settings.py) | 环境变量、模型路由和默认值 |
-| [`app/extensions/llm_adapter.py`](../app/extensions/llm_adapter.py) | Gemini / AiHubMix / GLM 兼容适配 |
+| [`app/extensions/llm_adapter.py`](../app/extensions/llm_adapter.py) | Gemini / AiHubMix / GLM / DeepSeek 兼容适配 |
 | [`.github/workflows/epic-gamer.yml`](../.github/workflows/epic-gamer.yml) | GitHub Actions 工作流入口 |
 
 ---
@@ -246,5 +246,5 @@ uv run ruff check --fix
 1. Epic 登录页是否更换验证码类型。
 2. 商品页按钮文案是否变化。
 3. checkout iframe 和 `Place Order` 行为是否变化。
-4. GLM / Gemini 的响应格式是否变化。
+4. GLM / DeepSeek / Gemini 的响应格式是否变化。
 5. GitHub Actions 运行环境是否变化。

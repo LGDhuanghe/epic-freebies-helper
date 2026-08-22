@@ -1341,3 +1341,27 @@
   - 计数题提示改为方向无关；通过重复数量徽标识别参考条方向并约束另一侧网格。所有点选答案在缓存和点击前验证挑战边界，计数题额外验证可点击网格，越界答案直接拒绝。
   - 无效的标量拖拽坐标提前报告为结构错误；新增浏览器请求头、超时信息、重试预算、左右参考条和越界坐标回归覆盖。
   - 本地定向测试 `35 passed`，完整测试 `60 passed`，Ruff、变更文件 Black 和 `git diff --check` 均通过。
+
+### 2026-08-22 支持 DeepSeek 视觉模型
+
+- 现象：
+  - 项目缺少 DeepSeek 视觉模型配置入口，Epic 商品页 locale 重定向还可能中断领取流程。
+- 根因判断：
+  - 运行时仅支持 Gemini / GLM，商品页恢复逻辑依赖完整 URL。
+- 改动文件：
+  - `app/settings.py`
+  - `app/extensions/llm_adapter.py`
+  - `app/services/epic_games_service.py`
+  - `.env.example`
+  - `.github/workflows/epic-gamer.yml`
+  - `.github/workflows/README.md`
+  - `.github/workflows/README.en.md`
+  - `docker/docker-compose.yaml`
+  - `README.md`
+  - `README.en.md`
+  - `docs/advanced.md`
+  - `docs/advanced.en.md`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 新增 `LLM_PROVIDER=deepseek`，支持 `deepseek-v4-flash-vision-exp`、思考模式和任务级思考强度。
+  - 同步 DeepSeek 配置说明，并兼容 Epic 商品页 locale 重定向。

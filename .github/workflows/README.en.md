@@ -94,10 +94,18 @@ When `LLM_PROVIDER=glm`, you must fill `GLM_API_KEY`; there is no need to create
 | `GLM_BASE_URL` | Optional, defaults to `https://open.bigmodel.cn/api/paas/v4` |
 | `GLM_MODEL` | Optional, recommended: `glm-4.6v` |
 
-For the `GLM` path, fill only `GLM_API_KEY`. For the `Gemini / AiHubMix` path, fill only `GEMINI_API_KEY`. There is no need to create or fill the other key. If the provider and key do not match, the workflow stops early and reports that configuration error directly.
-Do not mismatch the provider and the key: for example, `LLM_PROVIDER=glm` with only `GEMINI_API_KEY`, or `LLM_PROVIDER=gemini` with only `GLM_API_KEY`. The workflow now stops early and reports that configuration error directly.
+If you use DeepSeek:
 
-The program also checks these per-task overrides first. If they are not set, they fall back automatically to `GLM_MODEL` or `GEMINI_MODEL`:
+| Secret / Variable | Description |
+| --- | --- |
+| `LLM_PROVIDER` | Set to `deepseek` |
+| `DEEPSEEK_API_KEY` | DeepSeek API key |
+| `DEEPSEEK_BASE_URL` | Optional, defaults to `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | Optional, defaults to `deepseek-v4-flash-vision-exp` |
+
+Fill only the API key for the selected provider. If the provider and key do not match, the workflow stops early and reports that configuration error directly.
+
+The program also checks these per-task overrides first. If they are not set, they fall back automatically to `GLM_MODEL`, `DEEPSEEK_MODEL`, or `GEMINI_MODEL`:
 
 - `CHALLENGE_CLASSIFIER_MODEL`
 - `IMAGE_CLASSIFIER_MODEL`
@@ -125,6 +133,7 @@ This repository now includes an adapter layer:
 
 - The official Gemini API and AiHubMix-style Gemini-compatible relays continue to use the existing compatibility patch.
 - GLM is translated automatically into Zhipu's OpenAI-compatible `chat/completions` requests.
+- DeepSeek uses its official OpenAI-compatible vision endpoint and selects reasoning effort by captcha task.
 
 That is why GLM here should use a vision-capable model such as `glm-4.6v`, not a plain text coding model.
 If `glm-4.6v-flash` starts returning overload messages such as "the current model is too busy", switching to `GLM_MODEL=glm-4.6v` is usually more stable.

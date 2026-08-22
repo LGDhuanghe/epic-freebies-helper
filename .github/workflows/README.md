@@ -94,10 +94,18 @@
 | `GLM_BASE_URL` | 可选，默认 `https://open.bigmodel.cn/api/paas/v4` |
 | `GLM_MODEL` | 可选，推荐 `glm-4.6v` |
 
-`GLM` 路线只填写 `GLM_API_KEY`；`Gemini / AiHubMix` 路线只填写 `GEMINI_API_KEY`。另一组 key 无需新建并填写。如果 provider 和 key 对不上，工作流会直接报配置错误。
-不要把 `LLM_PROVIDER` 和 API key 填错位：例如 `LLM_PROVIDER=glm` 却只填了 `GEMINI_API_KEY`，或者 `LLM_PROVIDER=gemini` 却只填了 `GLM_API_KEY`。这种情况下工作流会直接报配置错误。
+如果你使用 DeepSeek：
 
-程序会优先读取这些模型覆盖项，如果未设置，则自动回落到 `GLM_MODEL` 或 `GEMINI_MODEL`：
+| Secret / Variable | 说明 |
+| --- | --- |
+| `LLM_PROVIDER` | 设为 `deepseek` |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | 可选，默认 `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | 可选，默认 `deepseek-v4-flash-vision-exp` |
+
+每条 provider 路线只填写对应的 API key。如果 provider 和 key 对不上，工作流会直接报配置错误。
+
+程序会优先读取这些模型覆盖项，如果未设置，则自动回落到 `GLM_MODEL`、`DEEPSEEK_MODEL` 或 `GEMINI_MODEL`：
 
 - `CHALLENGE_CLASSIFIER_MODEL`
 - `IMAGE_CLASSIFIER_MODEL`
@@ -125,6 +133,7 @@
 
 - Gemini 官方接口和 AiHubMix 兼容接口继续使用原有兼容补丁。
 - GLM 会自动转成智谱 OpenAI-compatible `chat/completions` 请求。
+- DeepSeek 会使用官方 OpenAI-compatible 视觉接口，并按验证码任务选择思考强度。
 
 这也是为什么 GLM 这里推荐 `glm-4.6v` 这类视觉模型，而不是纯文本的编码模型。
 如果你用 `glm-4.6v-flash` 遇到“该模型当前访问量过大，请您稍后重试”，直接改成 `GLM_MODEL=glm-4.6v` 通常更稳。

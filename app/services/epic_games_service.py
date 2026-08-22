@@ -11,6 +11,7 @@ import time
 from contextlib import suppress
 from json import JSONDecodeError
 from typing import List
+from urllib.parse import urlsplit
 
 import httpx
 from hcaptcha_challenger.agent import AgentV
@@ -765,6 +766,14 @@ class EpicGames:
         logger.info(f"Saved purchase debug screenshot - reason={reason} url={url}")
 
     @staticmethod
+    def _product_slug(url: str) -> str:
+        path_parts = [part for part in urlsplit(url).path.split("/") if part]
+        with suppress(ValueError):
+            product_index = path_parts.index("p")
+            return path_parts[product_index + 1].lower()
+        return ""
+
+    @staticmethod
     async def _goto_product_page(page: Page, url: str, title: str, attempts: int = 3) -> bool:
         for attempt in range(1, attempts + 1):
             try:
@@ -784,7 +793,7 @@ class EpicGames:
                 with suppress(Exception):
                     await page.evaluate("window.stop()")
 
-                if url.rstrip("/") in page.url.rstrip("/"):
+                if EpicGames._product_slug(url) == EpicGames._product_slug(page.url):
                     purchase_btn = page.locator(
                         "//button[@data-testid='purchase-cta-button']"
                     ).first

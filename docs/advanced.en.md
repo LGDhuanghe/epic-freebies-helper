@@ -23,7 +23,7 @@ If you only want to configure and use the project, start with:
 | [`app/services/epic_authorization_service.py`](../app/services/epic_authorization_service.py) | Login, login-result listeners, and post-login validation |
 | [`app/services/epic_games_service.py`](../app/services/epic_games_service.py) | Weekly freebie discovery, product-page entry, add-to-cart, checkout, and checkout verification handling |
 | [`app/settings.py`](../app/settings.py) | Environment variables, model routing, and defaults |
-| [`app/extensions/llm_adapter.py`](../app/extensions/llm_adapter.py) | Gemini / AiHubMix / GLM compatibility adapter |
+| [`app/extensions/llm_adapter.py`](../app/extensions/llm_adapter.py) | Gemini / AiHubMix / GLM / DeepSeek compatibility adapter |
 | [`.github/workflows/epic-gamer.yml`](../.github/workflows/epic-gamer.yml) | GitHub Actions workflow entry |
 
 ---
@@ -246,5 +246,5 @@ If you continue maintaining this project, keep watching these classes of change 
 1. Whether Epic changes the captcha type on the login page.
 2. Whether product-page button labels change.
 3. Whether checkout iframe behavior or `Place Order` behavior changes.
-4. Whether GLM / Gemini response formats change again.
+4. Whether GLM / DeepSeek / Gemini response formats change again.
 5. Whether the GitHub Actions runtime environment changes.

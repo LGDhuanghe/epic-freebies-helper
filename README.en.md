@@ -129,6 +129,17 @@ Configuration page example:
 
 ![GitHub Actions Secrets example](docs/images/tutorial/step2-actions-secrets.png)
 
+If you use `DeepSeek`, start with this set:
+
+| Setting | Example value |
+| --- | --- |
+| `LLM_PROVIDER` | deepseek |
+| `DEEPSEEK_API_KEY` | Your DeepSeek API key |
+| `DEEPSEEK_BASE_URL` | https://api.deepseek.com |
+| `DEEPSEEK_MODEL` | deepseek-v4-flash-vision-exp |
+
+This experimental vision model has been verified with Base64 images, thinking mode, and JSON Output. Simple classification and point selection use low reasoning effort, while complex drag tasks use high reasoning effort.
+
 If you use the `official Gemini API`, use this set:
 
 **If you set `LLM_PROVIDER=gemini`, you must provide `GEMINI_API_KEY`; there is no need to create or fill `GLM_API_KEY`.**
@@ -153,13 +164,14 @@ Notes:
 
 - The current codebase supports both the `official Gemini API` and Gemini-compatible relays such as `AiHubMix`.
 - The variable name is `GEMINI_BASE_URL`, not `GEMINI_BASE_MODEL`.
-- When `LLM_PROVIDER=glm`, fill `GLM_API_KEY`; there is no need to create or fill `GEMINI_API_KEY`.
-- When `LLM_PROVIDER=gemini`, fill `GEMINI_API_KEY`; there is no need to create or fill `GLM_API_KEY`.
+- When `LLM_PROVIDER=glm`, fill `GLM_API_KEY`.
+- When `LLM_PROVIDER=deepseek`, fill `DEEPSEEK_API_KEY`.
+- When `LLM_PROVIDER=gemini`, fill `GEMINI_API_KEY`.
 - When you use the `official Gemini API`, leave `GEMINI_BASE_URL` empty so the SDK uses Google's default endpoint.
 - Only set `GEMINI_BASE_URL` when you use `AiHubMix` or another Gemini-compatible relay.
 - For `GLM`, `glm-4.6v` is the recommended starting value; `glm-4.6v-flash` can fail during peak traffic.
 - For `Gemini` / `AiHubMix`, `GEMINI_MODEL=gemini-2.5-pro` is the recommended starting value.
-- If `CHALLENGE_CLASSIFIER_MODEL`, `IMAGE_CLASSIFIER_MODEL`, `SPATIAL_POINT_REASONER_MODEL`, and `SPATIAL_PATH_REASONER_MODEL` are left empty, they automatically follow the active provider default, meaning `GLM_MODEL` or `GEMINI_MODEL`.
+- If `CHALLENGE_CLASSIFIER_MODEL`, `IMAGE_CLASSIFIER_MODEL`, `SPATIAL_POINT_REASONER_MODEL`, and `SPATIAL_PATH_REASONER_MODEL` are left empty, they automatically follow the active provider default: `GLM_MODEL`, `DEEPSEEK_MODEL`, or `GEMINI_MODEL`.
 - If you do not want to split models by task yet, leave all four override fields empty.
 - The `GLM` path does not require an extra `GEMINI_API_KEY`.
 
