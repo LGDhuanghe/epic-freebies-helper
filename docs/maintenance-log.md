@@ -1414,3 +1414,27 @@
   - 限流仍先发送包含失败原因的摘要，再返回 `rate_limited` 正常结束；不会把限流记为领取成功，其他领取异常仍保持失败。未改动登录、hCaptcha、浏览器或 checkout 业务逻辑，保留 `master` 的 `70354be` 浏览器修复。
   - 对最新 PR 代码完成静态复审，并核对 WXPush 上游 `/wxsend` 响应协议；Ruff、Black、Python 语法、工作流 YAML 和 `git diff --check` 检查通过。
   - 按仓库规则，本轮未执行测试或真实微信投递。新增文件包含 29 个测试定义，但仍缺少发送异常、双渠道调度及限流返回值的集成回归覆盖；不能将此前浏览器修复的 70 项测试结果视为本 PR 的验证结果。
+
+### 2026-08-22 支持 DeepSeek 视觉模型
+
+- 现象：
+  - 项目缺少 DeepSeek 视觉模型配置入口，Epic 商品页 locale 重定向还可能中断领取流程。
+- 根因判断：
+  - 运行时仅支持 Gemini / GLM，商品页恢复逻辑依赖完整 URL。
+- 改动文件：
+  - `app/settings.py`
+  - `app/extensions/llm_adapter.py`
+  - `app/services/epic_games_service.py`
+  - `.env.example`
+  - `.github/workflows/epic-gamer.yml`
+  - `.github/workflows/README.md`
+  - `.github/workflows/README.en.md`
+  - `docker/docker-compose.yaml`
+  - `README.md`
+  - `README.en.md`
+  - `docs/advanced.md`
+  - `docs/advanced.en.md`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 新增 `LLM_PROVIDER=deepseek`，支持 `deepseek-v4-flash-vision-exp`、思考模式和任务级思考强度。
+  - 同步 DeepSeek 配置说明，并兼容 Epic 商品页 locale 重定向。

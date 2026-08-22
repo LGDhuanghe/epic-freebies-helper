@@ -101,6 +101,11 @@ def _glm_thinking_payload(model: str, config: Any) -> dict[str, str] | None:
     return {"type": "enabled"}
 
 
+def _deepseek_reasoning_effort(config: Any) -> str:
+    response_fields = _schema_field_names(getattr(config, "response_schema", None))
+    return "high" if "paths" in response_fields else "low"
+
+
 def _ensure_list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -1048,6 +1053,8 @@ class _GLMAsyncFiles:
 
 
 class _GLMAsyncModels:
+    provider_name = "GLM"
+
     def __init__(self, settings: Any, storage: dict[str, dict[str, Any]]):
         self._settings = settings
         self._storage = storage
@@ -1143,7 +1150,7 @@ class _GLMAsyncModels:
     def _extract_text(self, data: dict[str, Any]) -> str:
         choices = data.get("choices") or []
         if not choices:
-            raise ValueError("GLM response does not contain choices")
+            raise ValueError(f"{self.provider_name} response does not contain choices")
 
         message = choices[0].get("message") or {}
         content = message.get("content")
@@ -1158,7 +1165,7 @@ class _GLMAsyncModels:
                     parts.append(item.get("text", ""))
             return "\n".join(parts).strip()
 
-        raise ValueError("GLM response content is empty")
+        raise ValueError(f"{self.provider_name} response content is empty")
 
     def _parse_response(self, text: str, config: Any) -> Any:
         schema = getattr(config, "response_schema", None)
@@ -1182,7 +1189,11 @@ class _GLMAsyncModels:
                         text,
                     )
                 else:
-                    logger.warning("GLM structured parse fallback failed | raw_text={}", text[:500])
+                    logger.warning(
+                        "{} structured parse fallback failed | raw_text={}",
+                        self.provider_name,
+                        text[:500],
+                    )
                     return None
 
         if isinstance(schema, type) and issubclass(schema, BaseModel):
@@ -1222,22 +1233,30 @@ class _GLMAsyncModels:
             "GLM request failed | status={} | code={} | body={}", response.status_code, code, body
         )
 
+    def _provider_settings(self) -> tuple[str, str, str, float]:
+        return (
+            "GLM",
+            self._settings.GLM_BASE_URL,
+            self._settings.GLM_API_KEY.get_secret_value(),
+            float(self._settings.GLM_REQUEST_TIMEOUT_SECONDS),
+        )
+
+    def _log_provider_error(self, response: httpx.Response):
+        self._log_glm_error(response)
+
     async def generate_content(self, model: str, contents: Any, **kwargs) -> _PatchedResponse:
         config = kwargs.pop("config", None)
+        provider, base_url, api_key, request_timeout = self._provider_settings()
         if config is None:
-            raise ValueError("config is required for GLM compatibility mode")
+            raise ValueError(f"config is required for {provider} compatibility mode")
 
-        endpoint = self._settings.GLM_BASE_URL.rstrip("/")
+        endpoint = base_url.rstrip("/")
         if not endpoint.endswith("/chat/completions"):
             endpoint = f"{endpoint}/chat/completions"
 
         payload = self._build_payload(model=model, contents=contents, config=config, kwargs=kwargs)
-        headers = {
-            "Authorization": f"Bearer {self._settings.GLM_API_KEY.get_secret_value()}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-        request_timeout = float(self._settings.GLM_REQUEST_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(request_timeout, connect=min(30.0, request_timeout))
         ) as client:
@@ -1245,11 +1264,11 @@ class _GLMAsyncModels:
                 response = await client.post(endpoint, headers=headers, json=payload)
             except httpx.TimeoutException as err:
                 raise TimeoutError(
-                    f"GLM request timed out after {request_timeout:g} seconds "
+                    f"{provider} request timed out after {request_timeout:g} seconds "
                     f"({type(err).__name__})"
                 ) from err
             if response.is_error:
-                self._log_glm_error(response)
+                self._log_provider_error(response)
                 response.raise_for_status()
             data = response.json()
 
@@ -1258,18 +1277,58 @@ class _GLMAsyncModels:
         return _PatchedResponse(text=text, parsed=parsed, raw=data)
 
 
+class _DeepSeekAsyncModels(_GLMAsyncModels):
+    provider_name = "DeepSeek"
+
+    def _build_payload(
+        self, *, model: str, contents: Any, config: Any, kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        payload = super()._build_payload(
+            model=model, contents=contents, config=config, kwargs=kwargs
+        )
+        payload["thinking"] = {"type": "enabled"}
+        payload["reasoning_effort"] = _deepseek_reasoning_effort(config)
+        return payload
+
+    def _provider_settings(self) -> tuple[str, str, str, float]:
+        return (
+            "DeepSeek",
+            self._settings.DEEPSEEK_BASE_URL,
+            self._settings.DEEPSEEK_API_KEY.get_secret_value(),
+            float(self._settings.DEEPSEEK_REQUEST_TIMEOUT_SECONDS),
+        )
+
+    def _log_provider_error(self, response: httpx.Response):
+        logger.error(
+            "DeepSeek request failed | status={} | body={}",
+            response.status_code,
+            response.text[:2000],
+        )
+
+
 class _GLMAsyncNamespace:
-    def __init__(self, settings: Any, storage: dict[str, dict[str, Any]]):
+    def __init__(
+        self,
+        settings: Any,
+        storage: dict[str, dict[str, Any]],
+        models_class: type[_GLMAsyncModels] = _GLMAsyncModels,
+    ):
         self.files = _GLMAsyncFiles(storage)
-        self.models = _GLMAsyncModels(settings, storage)
+        self.models = models_class(settings, storage)
 
 
 class GLMCompatibleGenAIClient:
+    models_class = _GLMAsyncModels
+
     def __init__(self, *args, **kwargs):
         from settings import settings
 
         self._storage: dict[str, dict[str, Any]] = {}
-        self.aio = _GLMAsyncNamespace(settings, self._storage)
+        self.aio = _GLMAsyncNamespace(settings, self._storage, self.models_class)
+
+
+class DeepSeekCompatibleGenAIClient(GLMCompatibleGenAIClient):
+    models_class = _DeepSeekAsyncModels
 
 
 def _limit_glm_provider_attempts(max_attempts: int = 2) -> bool:
@@ -1363,6 +1422,25 @@ def apply_glm_patch(settings: Any):
         logger.error(f"❌ GLM 兼容补丁加载失败: {exc}")
 
 
+def apply_deepseek_patch(settings: Any):
+    if not settings.DEEPSEEK_API_KEY:
+        return
+
+    try:
+        from google import genai
+
+        genai.Client = DeepSeekCompatibleGenAIClient
+        if not _limit_glm_provider_attempts():
+            logger.warning("DeepSeek provider retry budget could not be configured")
+        logger.info(
+            "🚀 DeepSeek 兼容补丁已应用 | 模型: {} | 地址: {}",
+            settings.DEEPSEEK_MODEL,
+            settings.DEEPSEEK_BASE_URL,
+        )
+    except Exception as exc:
+        logger.error(f"❌ DeepSeek 兼容补丁加载失败: {exc}")
+
+
 def apply_llm_patch(settings: Any):
     provider = settings.LLM_PROVIDER.lower()
     if provider == "glm":
@@ -1370,6 +1448,15 @@ def apply_llm_patch(settings: Any):
             logger.error("LLM provider misconfigured | LLM_PROVIDER=glm but GLM_API_KEY is empty")
             return
         apply_glm_patch(settings)
+        return
+
+    if provider == "deepseek":
+        if not settings.DEEPSEEK_API_KEY:
+            logger.error(
+                "LLM provider misconfigured | LLM_PROVIDER=deepseek but DEEPSEEK_API_KEY is empty"
+            )
+            return
+        apply_deepseek_patch(settings)
         return
 
     if provider == "gemini" and not settings.GEMINI_API_KEY:
