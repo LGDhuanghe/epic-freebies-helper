@@ -69,7 +69,9 @@ class EpicSettings(AgentConfig):
     DEEPSEEK_MODEL: str = Field(
         default="deepseek-v4-flash-vision-exp", description="DeepSeek vision default model"
     )
-    DEEPSEEK_REQUEST_TIMEOUT_SECONDS: float = Field(default=50.0, gt=5.0, le=120.0)
+    DEEPSEEK_REQUEST_TIMEOUT_SECONDS: float = Field(default=70.0, gt=5.0, le=120.0)
+
+    EXECUTION_TIMEOUT: float = 180.0
 
     BROWSER_BACKEND: str = Field(
         default="auto", description="Supported values: auto, camoufox, playwright"
