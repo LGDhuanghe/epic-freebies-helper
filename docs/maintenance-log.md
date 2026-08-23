@@ -1381,3 +1381,16 @@
 - 处理结果：
   - DeepSeek 单次请求默认超时由 50 秒延长到 70 秒，hCaptcha 单轮执行超时由 120 秒延长到 180 秒。
   - GitHub Actions、Docker Compose 和本地环境示例同步使用相同预算，为两次 DeepSeek 请求及拖拽结果处理保留余量。
+
+### 2026-08-23 禁止异常日志展开敏感局部变量
+
+- 现象：
+  - Provider 请求超时时，Loguru traceback 会展开栈帧局部变量，导致 `Authorization` 请求头及 GLM、DeepSeek 等 Provider 的 API Key 进入运行日志和错误日志。
+- 根因判断：
+  - 项目所有 Loguru sink 沿用默认的 `diagnose=True`，异常诊断会输出局部变量值；配置对象自身的 SecretStr 脱敏无法保护请求函数里的普通字符串变量。
+- 改动文件：
+  - `app/utils.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 标准输出、运行日志和错误日志 sink 统一设置 `diagnose=False`，保留异常类型、消息和调用栈，但不再展开局部变量。
+  - 该保护覆盖使用全局 Loguru logger 的 GLM、DeepSeek、Gemini 兼容路径及上游 hCaptcha 调用链。
