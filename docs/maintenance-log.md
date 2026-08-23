@@ -1365,3 +1365,19 @@
 - 处理结果：
   - 新增 `LLM_PROVIDER=deepseek`，支持 `deepseek-v4-flash-vision-exp`、思考模式和任务级思考强度。
   - 同步 DeepSeek 配置说明，并兼容 Epic 商品页 locale 重定向。
+
+### 2026-08-23 延长 DeepSeek hCaptcha 求解超时预算
+
+- 现象：
+  - 最新 Actions 日志中，DeepSeek 拖拽题推理多次接近或超过 50 秒请求时限，重试后又受到 120 秒 hCaptcha 执行时限约束。
+- 根因判断：
+  - DeepSeek 拖拽推理耗时高于原请求预算；两次 50 秒请求、重试等待及拖拽结果处理已接近原单轮执行上限。
+- 改动文件：
+  - `app/settings.py`
+  - `.env.example`
+  - `.github/workflows/epic-gamer.yml`
+  - `docker/docker-compose.yaml`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - DeepSeek 单次请求默认超时由 50 秒延长到 70 秒，hCaptcha 单轮执行超时由 120 秒延长到 180 秒。
+  - GitHub Actions、Docker Compose 和本地环境示例同步使用相同预算，为两次 DeepSeek 请求及拖拽结果处理保留余量。

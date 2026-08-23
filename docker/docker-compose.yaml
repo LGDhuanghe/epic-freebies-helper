@@ -32,6 +32,7 @@ services:
       # - DEEPSEEK_API_KEY=your_deepseek_api_key
       # - DEEPSEEK_BASE_URL=https://api.deepseek.com
       # - DEEPSEEK_MODEL=deepseek-v4-flash-vision-exp
+      # - DEEPSEEK_REQUEST_TIMEOUT_SECONDS=70
 
       # ----------------------------------------
       # 运行参数
@@ -42,7 +43,7 @@ services:
       - BROWSER_PROXY=${BROWSER_PROXY:-}
       
       - DISABLE_BEZIER_TRAJECTORY=false
-      - EXECUTION_TIMEOUT=120
+      - EXECUTION_TIMEOUT=180
       - RESPONSE_TIMEOUT=30
       - RETRY_ON_FAILURE=false
       - WAIT_FOR_CHALLENGE_VIEW_TO_RENDER_MS=1500
