@@ -79,6 +79,35 @@ def test_glm_46_point_selection_preserves_existing_thinking_behavior():
     )
 
     assert "thinking" not in payload
+    assert "reasoning_effort" not in payload
+
+
+def test_glm_5_point_selection_uses_low_reasoning_effort():
+    client = _GLMAsyncModels(settings=None, storage={})
+
+    payload = client._build_payload(
+        model="glm-5.3-flash",
+        contents=[],
+        config=_glm_config(ImageAreaSelectChallenge, thinking_config=object()),
+        kwargs={},
+    )
+
+    # glm-5 系列始终思考，禁用思考会返回 code=1210，只能用 reasoning_effort 收敛耗时
+    assert "thinking" not in payload
+    assert payload["reasoning_effort"] == "low"
+
+
+def test_glm_5_drag_selection_uses_high_reasoning_effort():
+    client = _GLMAsyncModels(settings=None, storage={})
+
+    payload = client._build_payload(
+        model="glm-5.3-flash",
+        contents=[],
+        config=_glm_config(ImageDragDropChallenge, thinking_config=object()),
+        kwargs={},
+    )
+
+    assert payload["reasoning_effort"] == "high"
 
 
 def test_glm_provider_retry_budget_is_limited_to_two_attempts():

@@ -59,7 +59,7 @@ class EpicSettings(AgentConfig):
         default="https://open.bigmodel.cn/api/paas/v4", description="GLM OpenAI-compatible base URL"
     )
 
-    GLM_MODEL: str = Field(default="glm-4.6v", description="GLM vision-capable default model")
+    GLM_MODEL: str = Field(default="glm-5.3-flash", description="GLM vision-capable default model")
     GLM_REQUEST_TIMEOUT_SECONDS: float = Field(default=50.0, gt=5.0, le=120.0)
 
     DEEPSEEK_API_KEY: SecretStr | None = Field(default=None, description="DeepSeek API key")
