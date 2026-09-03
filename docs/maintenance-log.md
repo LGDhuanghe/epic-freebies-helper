@@ -1417,3 +1417,22 @@
   - 保持 `GLM_REQUEST_TIMEOUT_SECONDS` 默认 50 秒不变：改动后实测点选题 11.0 秒、拖拽题 11.7 秒完成，无需延长预算。
   - 验证限制：拖拽题仅有 2 份本地素材且已多次复用，可能受 prompt cache 影响；每个场景仅采样 1 次，未覆盖网络抖动。另观察到点选题在 `low` 强度下出现过一次首次应答「无法在图中找到」、重试后成功的情况（总耗时仍为 11 秒）；若后续点选准确率下降，可考虑将点选强度提高到 `high`（全力思考实测 38.6 秒，仍在 50 秒预算内）。
 
+### 2026-09-03 新增 xray-core 前置代理，支持全程走自有节点
+
+- 现象：
+  - GitHub Actions 直接以 runner 自身出口 IP 访问 Epic，无法指定落地。项目虽有 `BROWSER_PROXY`，但只覆盖浏览器流量，Python 侧的 Epic API 与 LLM 调用仍走直连，且 runner 上没有可用的代理客户端。
+- 根因判断：
+  - 缺的不是代码通路而是出口代理服务。要实现「全程走代理」需要两件事：在 workflow 里拉起一个本地代理进程；把浏览器与 Python 进程的流量分别指向它的 SOCKS 与 HTTP 入站。
+- 改动文件：
+  - `scripts/xray_config_from_link.py`（新增）
+  - `.github/workflows/epic-gamer.yml`
+  - `.env.example`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 新增 `scripts/xray_config_from_link.py`，把 `XRAY_LINK` 里的 `vless://` 分享链接转换成 xray 配置。`_stream_settings` 按 `security`/`type` 组合分支，仅支持两种：`reality+tcp`（XTLS-RPRX-Vision，需 `pbk`）与 `tls+xhttp`（生成 `tlsSettings` 与 `xhttpSettings`，`flow` 置空，XHTTP 不支持 Vision）；`sni` 为公共必填项，其他组合直接报错退出。生成的配置监听 `127.0.0.1:10808`（SOCKS）与 `127.0.0.1:10809`（HTTP）。
+  - workflow 新增 `Set up xray-core proxy` 与 `Verify proxy connectivity` 两步：下载 xray-core（默认取 latest，可用仓库变量 `XRAY_VERSION` 固定）、生成配置、后台启动，随后经 SOCKS 入站探测 `store.epicgames.com`，最多重试 5 次；仍不通则打印 xray 日志并 `exit 1`，不允许任务以 runner 出口 IP 继续。探测只要求拿到任意 HTTP 状态码（`%{http_code}` 非 `000`），不使用 `curl -f`：首次 Actions 实测 Epic WAF 对 curl 默认 UA 返回 403，而 xray 日志显示请求已正常经 `socks-in >> proxy` 出站，403 不代表代理故障。
+  - 运行步骤中，启用代理时 `BROWSER_PROXY` 被覆盖为 `socks5://127.0.0.1:10808`，并新增 `HTTP_PROXY`/`HTTPS_PROXY` 指向 `http://127.0.0.1:10809`、`NO_PROXY=127.0.0.1,localhost`。
+  - 未配置 `XRAY_LINK` 的 fork 行为完全不变：两步代理配置被 `if` 跳过，`BROWSER_PROXY` 仍取原有 secret，代理环境变量为空。
+  - 本地与 Docker 环境未改动，按约定只在 `.env.example` 补充说明，本地调试沿用自建 xray 并手工填写代理变量。
+  - 验证限制：本仓库不允许执行测试，且无法在此环境访问真实 Reality 节点或 GitHub Actions runner，因此 workflow 的下载、启动与连通性探测均未实际运行；仅对新增脚本做了本地解析验证：真实 xhttp 链接、reality 样例、`tls+ws` 负例各跑一次，输出与预期一致。
+

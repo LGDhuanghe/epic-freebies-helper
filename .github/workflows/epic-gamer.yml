@@ -9,6 +9,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # 留空时保持直连，沿用 BROWSER_PROXY；填入 vless:// 分享链接后全程走 xray-core。
+  XRAY_LINK: ${{ secrets.XRAY_LINK }}
 
 jobs:
   epic-gamer:
@@ -38,6 +40,45 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libxml2-dev libxslt-dev
+
+      # 配置了 XRAY_LINK 才启用前置代理；启用后任何一步失败都直接终止，
+      # 避免任务以 runner 自身出口 IP 裸奔访问 Epic。
+      - name: Set up xray-core proxy
+        if: env.XRAY_LINK != ''
+        run: |
+          version="${{ vars.XRAY_VERSION }}"
+          if [ -z "$version" ]; then
+            version=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')
+          fi
+          echo "Installing xray-core $version"
+          mkdir -p "$RUNNER_TEMP/xray"
+          curl -fsSL -o "$RUNNER_TEMP/xray/xray.zip" \
+            "https://github.com/XTLS/Xray-core/releases/download/${version}/Xray-linux-64.zip"
+          unzip -q -o "$RUNNER_TEMP/xray/xray.zip" -d "$RUNNER_TEMP/xray"
+          chmod +x "$RUNNER_TEMP/xray/xray"
+          python3 scripts/xray_config_from_link.py "$RUNNER_TEMP/xray/config.json"
+          nohup "$RUNNER_TEMP/xray/xray" run -c "$RUNNER_TEMP/xray/config.json" \
+            > "$RUNNER_TEMP/xray/xray.log" 2>&1 &
+
+      - name: Verify proxy connectivity
+        if: env.XRAY_LINK != ''
+        run: |
+          # Epic 的 WAF 会对 curl 默认 UA 返回 403，这不代表代理故障；
+          # 只要经代理拿到任意 HTTP 状态码就说明隧道已打通。
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS --max-time 20 --socks5-hostname 127.0.0.1:10808 \
+              -o /dev/null -w '%{http_code}' https://store.epicgames.com/ || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "✅ 代理连通性验证通过（HTTP $code）"
+              exit 0
+            fi
+            echo "代理尚未就绪，第 ${attempt} 次重试..."
+            sleep 3
+          done
+          echo "❌ xray-core 代理不可用，终止本次运行。xray 日志如下："
+          cat "$RUNNER_TEMP/xray/xray.log" || true
+          exit 1
 
       - name: Install dependencies
         run: uv sync
@@ -82,7 +123,12 @@ jobs:
           SPATIAL_POINT_REASONER_MODEL: ${{ vars.SPATIAL_POINT_REASONER_MODEL || secrets.SPATIAL_POINT_REASONER_MODEL }}
           SPATIAL_PATH_REASONER_MODEL: ${{ vars.SPATIAL_PATH_REASONER_MODEL || secrets.SPATIAL_PATH_REASONER_MODEL }}
           BROWSER_BACKEND: auto
-          BROWSER_PROXY: ${{ secrets.BROWSER_PROXY }}
+          # 启用 xray 时浏览器走本地 SOCKS 入站，未启用时沿用原有的 BROWSER_PROXY。
+          BROWSER_PROXY: ${{ env.XRAY_LINK != '' && 'socks5://127.0.0.1:10808' || secrets.BROWSER_PROXY }}
+          # Python 侧的 Epic API、LLM 调用等 HTTP 流量走本地 HTTP 入站。
+          HTTP_PROXY: ${{ env.XRAY_LINK != '' && 'http://127.0.0.1:10809' || '' }}
+          HTTPS_PROXY: ${{ env.XRAY_LINK != '' && 'http://127.0.0.1:10809' || '' }}
+          NO_PROXY: 127.0.0.1,localhost
           HEADLESS: virtual
           DISABLE_BEZIER_TRAJECTORY: false
           EXECUTION_TIMEOUT: 180
