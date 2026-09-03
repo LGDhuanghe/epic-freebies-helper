@@ -101,9 +101,16 @@ def _glm_thinking_payload(model: str, config: Any) -> dict[str, str] | None:
     return {"type": "enabled"}
 
 
-def _deepseek_reasoning_effort(config: Any) -> str:
+def _schema_reasoning_effort(config: Any) -> str:
     response_fields = _schema_field_names(getattr(config, "response_schema", None))
     return "high" if "paths" in response_fields else "low"
+
+
+def _glm_reasoning_effort(model: str, config: Any) -> str | None:
+    """glm-5 系列始终思考且不支持关闭，只能靠 reasoning_effort 压住视觉推理耗时。"""
+    if not model.lower().startswith("glm-5"):
+        return None
+    return _schema_reasoning_effort(config)
 
 
 def _ensure_list(value: Any) -> list[Any]:
@@ -1144,6 +1151,9 @@ class _GLMAsyncModels:
         if thinking_payload := _glm_thinking_payload(model, config):
             payload["thinking"] = thinking_payload
 
+        if reasoning_effort := _glm_reasoning_effort(model, config):
+            payload["reasoning_effort"] = reasoning_effort
+
         payload.update({k: v for k, v in kwargs.items() if k not in {"config"}})
         return payload
 
@@ -1287,7 +1297,7 @@ class _DeepSeekAsyncModels(_GLMAsyncModels):
             model=model, contents=contents, config=config, kwargs=kwargs
         )
         payload["thinking"] = {"type": "enabled"}
-        payload["reasoning_effort"] = _deepseek_reasoning_effort(config)
+        payload["reasoning_effort"] = _schema_reasoning_effort(config)
         return payload
 
     def _provider_settings(self) -> tuple[str, str, str, float]:

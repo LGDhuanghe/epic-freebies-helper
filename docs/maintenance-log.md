@@ -1394,3 +1394,26 @@
 - 处理结果：
   - 标准输出、运行日志和错误日志 sink 统一设置 `diagnose=False`，保留异常类型、消息和调用栈，但不再展开局部变量。
   - 该保护覆盖使用全局 Loguru logger 的 GLM、DeepSeek、Gemini 兼容路径及上游 hCaptcha 调用链。
+
+### 2026-09-02 修正 glm-5 系列思考强度失控导致的验证码超时
+
+- 现象：
+  - 将 `GLM_MODEL` 切换到 `glm-5.3-flash` 后，hCaptcha 求解频繁超时。本地用真实挑战素材复现：点选题首次请求撑满 120 秒超时、重试才成功（总 158.7 秒）；拖拽题两次请求全部 120 秒超时、彻底失败（总 243.4 秒），已击穿 `EXECUTION_TIMEOUT=180`。
+- 根因判断：
+  - 不是请求超时预算太小，而是 glm-5 系列没有走思考强度控制。`_glm_thinking_payload` 只匹配 `glm-4.5` 前缀，`glm-5.3-flash` 落空后不携带任何思考参数，模型按默认全力思考，视觉推理耗时不可控（最小文本请求中 137 个输出 token 里 132 个是 reasoning token）。
+  - `GLM_REQUEST_TIMEOUT_SECONDS` 的字段上限就是 120 秒，已无加大空间，单纯延长超时无法解决。
+  - 该系列也无法关闭思考：发送 `thinking={"type": "disabled"}` 时服务端返回 `code=1210 该模型始终思考，不支持关闭思考；请使用 low、high 或 max`。经参数探测确认，有效的收敛手段是 `reasoning_effort`（`low` 使 reasoning_tokens 由 303 降至 24）。
+- 改动文件：
+  - `app/extensions/llm_adapter.py`
+  - `app/settings.py`
+  - `.env.example`
+  - `docker/docker-compose.yaml`
+  - `tests/test_glm_adapter.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 新增 `_glm_reasoning_effort`，对 `glm-5` 前缀模型按响应 schema 下发 `reasoning_effort`：拖拽题 `high`、其余 `low`。判据函数由 `_deepseek_reasoning_effort` 更名为 `_schema_reasoning_effort`，与 DeepSeek 路径共用同一策略。
+  - `glm-4.x` 行为完全不变，仍不携带 `reasoning_effort`；`glm-4.5` 的 thinking 开关逻辑保持原样。
+  - 默认 `GLM_MODEL` 由 `glm-4.6v` 改为 `glm-5.3-flash`，`.env.example` 与 Docker Compose 示例同步。
+  - 保持 `GLM_REQUEST_TIMEOUT_SECONDS` 默认 50 秒不变：改动后实测点选题 11.0 秒、拖拽题 11.7 秒完成，无需延长预算。
+  - 验证限制：拖拽题仅有 2 份本地素材且已多次复用，可能受 prompt cache 影响；每个场景仅采样 1 次，未覆盖网络抖动。另观察到点选题在 `low` 强度下出现过一次首次应答「无法在图中找到」、重试后成功的情况（总耗时仍为 11 秒）；若后续点选准确率下降，可考虑将点选强度提高到 `high`（全力思考实测 38.6 秒，仍在 50 秒预算内）。
+
