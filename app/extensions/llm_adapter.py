@@ -1268,7 +1268,8 @@ class _GLMAsyncModels:
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(request_timeout, connect=min(30.0, request_timeout))
+            trust_env=False,
+            timeout=httpx.Timeout(request_timeout, connect=min(30.0, request_timeout)),
         ) as client:
             try:
                 response = await client.post(endpoint, headers=headers, json=payload)
