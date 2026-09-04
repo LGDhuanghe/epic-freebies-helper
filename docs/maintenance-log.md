@@ -1436,3 +1436,17 @@
   - 本地与 Docker 环境未改动，按约定只在 `.env.example` 补充说明，本地调试沿用自建 xray 并手工填写代理变量。
   - 验证限制：本仓库不允许执行测试，且无法在此环境访问真实 Reality 节点或 GitHub Actions runner，因此 workflow 的下载、启动与连通性探测均未实际运行；仅对新增脚本做了本地解析验证：真实 xhttp 链接、reality 样例、`tls+ws` 负例各跑一次，输出与预期一致。
 
+
+### 2026-09-05 模型请求脱离代理环境变量，恢复直连
+
+- 现象：
+  - 2026-09-04 的 GitHub Actions 运行（日志包 epic-logs-33783988008.zip）零领取、认证 5 轮全部超时。所有 GLM 请求（`open.bigmodel.cn`）经 xray HTTP 入站代理在 CONNECT 隧道后的 TLS 握手阶段 20/20 次 `ConnectError`，验证码一次未解出，最终 `Authentication failed, aborting this run`。浏览器与 SOCKS 入站通路正常。
+- 根因判断：
+  - 09-03 上线的全程代理特性在 workflow 注入了 `HTTPS_PROXY=http://127.0.0.1:10809`，httpx 默认 `trust_env=True` 读取该变量，导致国内可达的 GLM 端点被强制经海外节点回源，链路不通。代理连通性探测只覆盖 SOCKS 入站 → Epic，未覆盖 HTTP 入站 → LLM 端点，故未能提前拦截。
+- 改动文件：
+  - `app/extensions/llm_adapter.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - `generate_content` 的 `httpx.AsyncClient` 增加 `trust_env=False`，GLM/DeepSeek 全部模型请求不再受 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量影响，永久直连。Epic API、浏览器流量仍走代理，Telegram、hCaptcha 实体图下载不受影响。
+  - Gemini 官方路径（google-genai SDK 内部 aiohttp，`trust_env` 由 SDK 控制）不在此次覆盖内；当前 LLM_PROVIDER=glm 未使用该路径。
+  - 验证限制：仓库不允许执行测试，仅做 ruff/black 静态检查与语法解析（均通过）；真实效果需下次 Actions 运行确认。
