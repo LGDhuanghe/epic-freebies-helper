@@ -1523,3 +1523,41 @@
   - `generate_content` 的 `httpx.AsyncClient` 增加 `trust_env=False`，GLM/DeepSeek 全部模型请求不再受 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量影响，永久直连。Epic API、浏览器流量仍走代理，Telegram、hCaptcha 实体图下载不受影响。
   - Gemini 官方路径（google-genai SDK 内部 aiohttp，`trust_env` 由 SDK 控制）不在此次覆盖内；当前 LLM_PROVIDER=glm 未使用该路径。
   - 验证限制：仓库不允许执行测试，仅做 ruff/black 静态检查与语法解析（均通过）；真实效果需下次 Actions 运行确认。
+
+
+### 2026-09-06 修正模型网格像素坐标作答与无坐标响应击穿重试
+
+- 现象：
+  - 2026-09-05 20:56 与 2026-09-06 00:12 两次本地运行，验证码环节频繁失败。00:12 那次共 11 次挑战尝试：3 次被 `_point_answer_validation_error` 以「point 越界」拒绝，1 次因模型响应缺字段抛 `ValidationError`，3 次 `Cannot find a valid challenge frame`，4 次 `Wait for captcha payload to timeout`。认证第 2 轮耗尽 180 秒预算，直到第 5 轮才登录成功。
+- 根因判断：
+  - 被拒的点位其实是正确答案。以 `20260906001901554601`（题目 `Pick things you can open and close with a lid`）为例，模型给出 `(165,525) (350,550) (190,790)`，读取的是 `spatial_helper.png` 自身的网格像素坐标，而非坐标轴标注的页面坐标。`create_coordinate_grid` 以 `extent==xlim/ylim` 渲染，axes 数据域即页面 bbox，按 axes 像素区域换算回页面坐标后依次落在绿色垃圾桶、上方锅、左下锅上（偏差 7.3/7.3/11.0px），语义完全正确。原实现直接 `raise`，把可用答案丢弃。
+  - 模型还会在同一次作答中混用两套坐标系（00:15:56 的 `(190,400) (245,575) (860,620)`，末点已是页面坐标），故换算必须逐点判断。
+  - `{"answer":"加载中，...","coordinates":[]}` 属于截图停在加载态、模型如实回报无目标。`_coerce_payload_for_schema` 的 points 分支在所有提取尝试失败后落到 `return payload`，缺 `challenge_prompt`/`points` 触发 `ValidationError`，被 tenacity 重试。但重试传入的是同一张已缓存截图，模型必然再次回报加载态，重试无效且白耗配额；有效路径是让本次快速失败、由上层重新截图后再解。
+  - 一并核实两项排除：`_match_user_prompt` 在 payload 缺失时 fallback 为 `"Please note that the current task type is: ..."` 而非空串，日志中的 `"Challenge Prompt": ""` 是模型未回填该字段，且题面文字就印在 challenge-view 截图顶部（`reasoning_content` 中出现 `Trash cans with lids` 可证），故「题干为空导致盲猜」不成立，未做改动。
+  - 思考强度经真实素材探测排除：同一张网格图下 `reasoning_effort` 取 low/high/max 各跑 2 次，6 次语义判断全部正确，耗时 4.8/10.7、17.8/7.6、19.1/20.8 秒，reasoning_tokens 80→727 线性上涨。坐标系漂移与格式差异在三档下均出现，与思考强度无关；而 `max` 下两个 crumb 合计约 40 秒，叠加渲染等待已逼近 `GLM_REQUEST_TIMEOUT_SECONDS=50`，会重演 3f789a5 修复的超时。故维持点选题 `low`、拖拽题 `high` 不变。
+- 改动文件：
+  - `app/extensions/hcaptcha_adapter.py`
+  - `app/extensions/llm_adapter.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 新增 `_detect_grid_axes_bounds`，用纯黑 spine（left/bottom，top 与 right 不渲染）定位 axes 左右下界、以 imshow 铺满 axes 的首行定位顶边，宽度由 `aspect='equal'` 保证的 bbox 宽高比推出，避免硬编码 tight_layout 边距。三类真实素材（两点选、一拖拽）检出值一致。
+  - 新增 `_remap_grid_pixel_points`，仅在点位校验失败时调用。触发判据为「至少一点落在 bbox 原点左上方」——页面坐标不可能出现该情形，可与仅轻微外推的答案区分（如 `(718,770)` 不触发，保持原 `raise`）。换算逐点进行，不改动本就合法的页面坐标；换算后仍有任一点越界则整体放弃并沿用原 `raise`，最坏情况不劣于改动前。
+  - `_coerce_payload_for_schema` 的 points 分支在确实提取不到坐标时返回 `points: []`，由上层既有的「model returned no click points」分支处理，不再以 `ValidationError` 击穿 provider 层重试。拖拽题分支行为不变，无坐标仍 `raise`。
+  - 验证限制：仓库不允许执行测试，且本机未安装 ruff/black（`uv` 亦不在 PATH），静态检查仅做 `py_compile` 与补丁装载导入（均通过）。功能验证用本次运行留下的真实产物静态驱动：纯网格漂移换算后全部命中目标、混用坐标系仅换算漂移点、轻微越界与合法点位不被改动、空点位不触发换算，5 个用例结果符合预期；schema 侧复跑 4 种历史格式回归正常、加载态响应不再抛错。真实收益需下次运行确认。
+
+
+### 2026-09-08 补齐 hCaptcha 拖拽终点换算与操作前边界校验
+
+- 现象：
+  - 最新本地运行日志中，2026-09-06 15:51、15:56 的螺旋拼图拖拽仍失败。挑战区横轴标注为页面坐标 `710..1210`，两次答案起点都是 `(1140,609)`，终点却分别为 `(512,641)`、`(578,748)`，已落到挑战区左侧。
+- 根因判断：
+  - 对照缓存的 `500×471` 原图、`1000×1000` 网格图及模型回答，模型混用了 payload 提供的页面起点和网格图片像素终点。
+  - 上次 `_remap_grid_pixel_points` 仅接入点选题；拖拽流程只调用 `_correct_drag_source_points` 校正起点，既未换算终点，也未在操作前校验整组起止点，因此越界终点仍被直接用于鼠标拖拽。
+- 改动文件：
+  - `app/extensions/hcaptcha_adapter.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 模型拖拽提示复用现有挑战区边界约束。保留 payload 起点校正，随后仅对终点复用已有网格像素换算，并记录换算后的终点；不添加固定偏移或新的坐标判定算法，不改动边界内的页面坐标。
+  - 在首次鼠标拖拽前校验整组起止点；空答案、无法安全换算或仍越界的答案抛出异常，交由上游既有刷新挑战流程处理，不再先拖拽后发现越界。本地确定性求解器不做网格像素换算。
+  - 静态语法解析、静态编译及 `git diff --check` 通过；当前虚拟环境未安装 Ruff/Black，未执行相应检查。遵守仓库限制，未执行测试、功能回放、浏览器任务或模型请求；原有未提交改动保留，维护记录仅追加。
+  - 验证限制：本次补齐的是有运行证据的拖拽处理漏项，实际改善仍需下一次真实运行确认。边界内的错误坐标及模型选错目标不能仅凭越界判据识别，不宣称所有位置漂移均已消除。

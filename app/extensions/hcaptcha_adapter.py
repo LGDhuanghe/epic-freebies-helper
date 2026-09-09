@@ -172,6 +172,90 @@ def _point_inside_bounds(
     return x_min <= x <= x_max and y_min <= y <= y_max
 
 
+def _detect_grid_axes_bounds(
+    spatial_helper: Path, challenge_bbox: dict[str, float]
+) -> tuple[float, float, float, float] | None:
+    """定位网格图中 axes 的像素区域。
+
+    create_coordinate_grid 以 extent==xlim/ylim 渲染，axes 的数据域即页面 bbox，
+    因此该区域可把网格像素坐标线性换算回页面坐标。
+    """
+    image = cv2.imread(str(spatial_helper))
+    if image is None:
+        return None
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    height, width = gray.shape
+    dark = gray < 80
+
+    # 左侧与底部 spine 是贯穿 axes 的纯黑实线，top 与 right spine 不渲染
+    column_span = dark[int(height * 0.2) : int(height * 0.8), :]
+    row_span = dark[:, int(width * 0.2) : int(width * 0.8)]
+    columns = np.flatnonzero(column_span.sum(axis=0) >= column_span.shape[0] * 0.95)
+    rows = np.flatnonzero(row_span.sum(axis=1) >= row_span.shape[1] * 0.95)
+    if not len(columns) or not len(rows):
+        return None
+
+    left = float(columns.min())
+    bottom = float(rows.max())
+
+    # imshow 铺满 axes，故图像内容的首行即 axes 顶边
+    content = (gray < 250)[:, int(left) :]
+    tops = np.flatnonzero(content.sum(axis=1) > content.shape[1] * 0.6)
+    if not len(tops):
+        return None
+
+    top = float(tops.min())
+    axes_height = bottom - top
+    bbox_height = float(challenge_bbox["height"])
+    if axes_height <= 0 or bbox_height <= 0:
+        return None
+
+    # imshow 默认 aspect='equal'，axes 宽高比与页面 bbox 一致
+    return left, top, axes_height * float(challenge_bbox["width"]) / bbox_height, axes_height
+
+
+def _remap_grid_pixel_points(
+    points: list[Any], *, spatial_helper: Path, challenge_bbox: dict[str, float]
+) -> bool:
+    """模型偶发按网格图像素作答而非读取轴标，原地换算回页面坐标。"""
+    if not points:
+        return False
+
+    bbox_x = float(challenge_bbox["x"])
+    bbox_y = float(challenge_bbox["y"])
+    bbox_width = float(challenge_bbox["width"])
+    bbox_height = float(challenge_bbox["height"])
+
+    # 页面坐标不可能落在 bbox 原点的左上方，出现即说明模型读的是网格像素而非轴标。
+    # 仅轻微越界（如 y 略微外推）的答案不满足该判据，避免被平移到无关位置。
+    if not any(float(point.x) < bbox_x or float(point.y) < bbox_y for point in points):
+        return False
+
+    axes_bounds = _detect_grid_axes_bounds(spatial_helper, challenge_bbox)
+    if axes_bounds is None:
+        return False
+
+    left, top, axes_width, axes_height = axes_bounds
+    challenge_bounds = (bbox_x, bbox_y, bbox_x + bbox_width, bbox_y + bbox_height)
+
+    # 模型可能混用两套坐标系，故逐点判断，不改动本就合法的页面坐标
+    remapped: list[tuple[float, float]] = []
+    for point in points:
+        x, y = float(point.x), float(point.y)
+        if x < bbox_x or y < bbox_y:
+            x = bbox_x + (x - left) / axes_width * bbox_width
+            y = bbox_y + (y - top) / axes_height * bbox_height
+        remapped.append((x, y))
+
+    if any(not _point_inside_bounds(point, challenge_bounds) for point in remapped):
+        return False
+
+    for point, (x, y) in zip(points, remapped):
+        point.x, point.y = int(round(x)), int(round(y))
+    return True
+
+
 def _build_point_prompt(
     user_prompt: str,
     *,
@@ -717,6 +801,20 @@ def apply_hcaptcha_drag_patch() -> None:
                     challenge_bbox=challenge_bbox,
                     clickable_bounds=clickable_bounds,
                 )
+                if validation_error is not None and challenge_bbox is not None:
+                    if _remap_grid_pixel_points(
+                        response.points, spatial_helper=projection, challenge_bbox=challenge_bbox
+                    ):
+                        logger.info(
+                            "Remapped hCaptcha point answer from grid pixels to page coordinates "
+                            "| points={}",
+                            [(point.x, point.y) for point in response.points],
+                        )
+                        validation_error = _point_answer_validation_error(
+                            response.points,
+                            challenge_bbox=challenge_bbox,
+                            clickable_bounds=clickable_bounds,
+                        )
                 if validation_error is not None:
                     logger.warning(
                         "Rejected unsafe hCaptcha point answer | reason={}", validation_error
@@ -772,6 +870,9 @@ def apply_hcaptcha_drag_patch() -> None:
                     challenge_screenshot=raw,
                     challenge_bbox=challenge_bbox,
                 )
+                user_prompt = _build_point_prompt(
+                    user_prompt, challenge_bbox=challenge_bbox, clickable_bounds=None
+                )
                 response = await self._spatial_path_reasoner(
                     challenge_screenshot=raw,
                     grid_divisions=projection,
@@ -790,6 +891,25 @@ def apply_hcaptcha_drag_patch() -> None:
                     challenge_screenshot=raw,
                     challenge_bbox=challenge_bbox,
                 )
+                # 起点已按 payload 校正，只换算终点，避免混用坐标系时改坏起点。
+                if challenge_bbox is not None and _remap_grid_pixel_points(
+                    [path.end_point for path in paths],
+                    spatial_helper=projection,
+                    challenge_bbox=challenge_bbox,
+                ):
+                    logger.info(
+                        "已将 hCaptcha 拖拽终点从网格像素换算为页面坐标 | 终点={}",
+                        [(path.end_point.x, path.end_point.y) for path in paths],
+                    )
+
+            validation_error = _point_answer_validation_error(
+                [point for path in paths for point in (path.start_point, path.end_point)],
+                challenge_bbox=challenge_bbox,
+                clickable_bounds=None,
+            )
+            if validation_error is not None:
+                logger.warning("拒绝不安全的 hCaptcha 拖拽答案 | 原因={}", validation_error)
+                raise ValueError(f"不安全的 hCaptcha 拖拽答案: {validation_error}")
 
             for path in paths:
                 await self._perform_drag_drop(path)

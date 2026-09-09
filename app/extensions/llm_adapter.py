@@ -935,6 +935,14 @@ def _coerce_payload_for_schema(payload: dict[str, Any], schema: Any, text: str) 
         if point_payload:
             return point_payload
 
+        # 模型确实没给坐标（例如截图停在加载态）时返回空点位。重试拿到的是同一张
+        # 缓存截图，原地重试无意义，交由上层重新截图后再解一次。
+        return {
+            "challenge_prompt": challenge_prompt,
+            "inferred_rule": inferred_rule,
+            "points": [],
+        }
+
     challenge_type_field = next(
         (
             name
