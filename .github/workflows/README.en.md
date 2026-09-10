@@ -7,7 +7,7 @@ Language versions:
 
 The repository already includes [`.github/workflows/epic-gamer.yml`](epic-gamer.yml). Using it directly is the recommended way to run scheduled claims.
 
-The default schedule is now once per week: `Thursday 23:20 China Standard Time` (`UTC 15:20` in GitHub cron). That puts the run after the weekly Epic refresh, which is a better default for most users.
+The default schedule is now once per week: `Saturday 23:20 China Standard Time` (`UTC 15:20` in GitHub cron). That puts the run after the weekly Epic refresh, which is a better default for most users.
 
 ## What the Workflow Does
 
@@ -25,9 +25,9 @@ The workflow is triggered by GitHub `schedule` and `workflow_dispatch`. APSchedu
 
 ## Default Schedule
 
-- Default schedule: once every Thursday
-- GitHub cron: `20 15 * * 4`
-- Time: `Thursday 15:20 UTC` / `Thursday 23:20 China Standard Time`
+- Default schedule: once every Saturday
+- GitHub cron: `20 15 * * 6`
+- Time: `Saturday 15:20 UTC` / `Saturday 23:20 China Standard Time`
 
 If you want a different time, edit the `schedule` section inside [`.github/workflows/epic-gamer.yml`](epic-gamer.yml). The easiest way is to open that file on GitHub, click the pencil icon, update the cron line, and commit the change.
 

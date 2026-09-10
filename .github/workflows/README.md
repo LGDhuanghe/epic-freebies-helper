@@ -7,7 +7,7 @@
 
 当前仓库已经内置 [`.github/workflows/epic-gamer.yml`](epic-gamer.yml)，推荐直接使用它来定时执行。
 
-默认定时已经改成每周一次：`北京时间周四 23:20`（GitHub cron 使用 `UTC 15:20`）。这个时间点放在 Epic 周免刷新之后，更适合作为默认设置。
+默认定时已经改成每周一次：`北京时间周六 23:20`（GitHub cron 使用 `UTC 15:20`）。这个时间点放在 Epic 周免刷新之后，更适合作为默认设置。
 
 ## 工作流做了什么
 
@@ -25,9 +25,9 @@
 
 ## 默认运行时间
 
-- 默认 schedule：每周四一次
-- GitHub cron：`20 15 * * 4`
-- 对应时间：`UTC 周四 15:20` / `北京时间周四 23:20`
+- 默认 schedule：每周六一次
+- GitHub cron：`20 15 * * 6`
+- 对应时间：`UTC 周六 15:20` / `北京时间周六 23:20`
 
 如果你想改成自己的时间，直接编辑 [`.github/workflows/epic-gamer.yml`](epic-gamer.yml) 里的 `schedule` 即可。最方便的方式是在 GitHub 网页里打开这个文件，点右上角铅笔按钮，修改 `cron` 后提交。
 

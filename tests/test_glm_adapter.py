@@ -97,7 +97,7 @@ def test_glm_5_point_selection_uses_low_reasoning_effort():
     assert payload["reasoning_effort"] == "low"
 
 
-def test_glm_5_drag_selection_uses_high_reasoning_effort():
+def test_glm_5_drag_selection_uses_low_reasoning_effort():
     client = _GLMAsyncModels(settings=None, storage={})
 
     payload = client._build_payload(
@@ -107,7 +107,7 @@ def test_glm_5_drag_selection_uses_high_reasoning_effort():
         kwargs={},
     )
 
-    assert payload["reasoning_effort"] == "high"
+    assert payload["reasoning_effort"] == "low"
 
 
 def test_glm_provider_retry_budget_is_limited_to_two_attempts():

@@ -106,11 +106,11 @@ def _schema_reasoning_effort(config: Any) -> str:
     return "high" if "paths" in response_fields else "low"
 
 
-def _glm_reasoning_effort(model: str, config: Any) -> str | None:
+def _glm_reasoning_effort(model: str) -> str | None:
     """glm-5 系列始终思考且不支持关闭，只能靠 reasoning_effort 压住视觉推理耗时。"""
     if not model.lower().startswith("glm-5"):
         return None
-    return _schema_reasoning_effort(config)
+    return "low"
 
 
 def _ensure_list(value: Any) -> list[Any]:
@@ -1159,7 +1159,7 @@ class _GLMAsyncModels:
         if thinking_payload := _glm_thinking_payload(model, config):
             payload["thinking"] = thinking_payload
 
-        if reasoning_effort := _glm_reasoning_effort(model, config):
+        if reasoning_effort := _glm_reasoning_effort(model):
             payload["reasoning_effort"] = reasoning_effort
 
         payload.update({k: v for k, v in kwargs.items() if k not in {"config"}})

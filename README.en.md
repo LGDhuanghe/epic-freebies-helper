@@ -42,7 +42,7 @@ If you run into an error, please feel free to open an [Issue](https://github.com
 | Claim result notifications | Optionally sends a Telegram / WXPush (WeChat) run summary |
 | Multi-account support | Optional; single-account behavior is unchanged when not configured |
 | Captcha handling | Supports login captcha and checkout security checks |
-| Scheduled execution | Runs once every Thursday by default on GitHub Actions and can be adjusted |
+| Scheduled execution | Runs once every Saturday by default on GitHub Actions and can be adjusted |
 
 ---
 

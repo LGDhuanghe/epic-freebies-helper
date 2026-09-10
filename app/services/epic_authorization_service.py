@@ -271,7 +271,7 @@ class EpicAuthorization:
 
     async def _has_visible_hcaptcha(self) -> bool:
         for frame in self.page.frames:
-            if "hcaptcha" in (frame.url or "").lower():
+            if "hcaptcha" in (frame.url or "").lower() and "frame=challenge" in frame.url:
                 with suppress(Exception):
                     frame_element = await frame.frame_element()
                     visible = await frame_element.evaluate(
@@ -286,19 +286,11 @@ class EpicAuthorization:
                         }
                         """
                     )
-                    if visible:
+                    # 复选框、提示文字和已收起的题目都不代表有待解挑战。
+                    if visible and await frame.locator(".challenge-view").is_visible():
                         return True
 
-        body = (await self._page_body_text()).lower()
-        return any(
-            marker in body
-            for marker in (
-                "one more step",
-                "please complete a security check",
-                "verify you are human",
-                "i am human",
-            )
-        )
+        return False
 
     async def _wait_for_login_form(self, point_url: str) -> None:
         deadline = time.monotonic() + 45
@@ -371,6 +363,7 @@ class EpicAuthorization:
         max_totp_attempts = 6
         max_invalid_totp_rejections = 3
         captcha_totp_refresh_cooldown = 8.0
+        password_form_ready_since: float | None = None
 
         def extend_deadline(reason: str, seconds: int = 120) -> None:
             nonlocal deadline
@@ -499,7 +492,31 @@ class EpicAuthorization:
                     )
                 continue
 
-            if await self._has_visible_hcaptcha():
+            if "/id/login" in self.page.url and "incorrect response" in (
+                await self._page_body_text()
+            ).lower():
+                raise RuntimeError("Epic 登录页提示响应不正确，需要刷新页面后重试")
+
+            captcha_visible = await self._has_visible_hcaptcha()
+            password_form_ready = False
+            with suppress(PlaywrightError):
+                sign_in_button = self.page.locator("#sign-in")
+                password_form_ready = (
+                    not captcha_visible
+                    and not self._is_mfa_page()
+                    and await self.page.locator("#password").is_visible()
+                    and await sign_in_button.is_visible()
+                    and await sign_in_button.is_enabled(timeout=500)
+                )
+            if not password_form_ready:
+                password_form_ready_since = None
+            elif password_form_ready_since is None:
+                password_form_ready_since = time.monotonic()
+            elif time.monotonic() - password_form_ready_since >= 8:
+                # 提前进入外层已有的有界重提交流程，不增加密码提交上限。
+                raise PlaywrightTimeoutError("Epic 密码表单持续可提交，提前结束登录等待")
+
+            if captcha_visible:
                 logger.warning(
                     "Login captcha is visible during authentication outcome; solving before "
                     "continuing | current_url='{}'",
@@ -519,6 +536,7 @@ class EpicAuthorization:
                     challenge_solved = challenge_signal is ChallengeSignal.SUCCESS
                     if challenge_solved:
                         extend_deadline("captcha-solved", 120)
+                        await self.page.wait_for_timeout(2000)
                     else:
                         logger.warning(
                             "Login captcha did not succeed during authentication outcome | "
@@ -564,6 +582,17 @@ class EpicAuthorization:
                     return
 
             await self.page.wait_for_timeout(500)
+
+        if self._login_error_signal.empty() and self.page.url.startswith(
+            (
+                "https://www.epicgames.com/account/",
+                "https://accounts.epicgames.com/account/",
+            )
+        ):
+            # 路由跳转不是成功凭据，复核通过后仍需完成后续账户与商店校验。
+            logger.warning("登录结果等待超时，页面已进入账户区；复核账户会话后再决定是否重试")
+            if await self._has_account_session():
+                return
 
         raise PlaywrightTimeoutError("Timed out waiting for Epic login outcome")
 
@@ -732,20 +761,24 @@ class EpicAuthorization:
 
             login_confirmed = False
             for challenge_attempt in range(1, 4):
-                logger.debug("Solving login challenge attempt {}/3", challenge_attempt)
                 challenge_signal = ChallengeSignal.FAILURE
-                try:
-                    challenge_signal = await wait_for_challenge_signal(
-                        agent,
-                        context=f"login:{challenge_attempt}",
-                        timeout_seconds=(
-                            settings.EXECUTION_TIMEOUT + settings.RESPONSE_TIMEOUT + 5
-                        ),
-                    )
-                except Exception:
-                    pass
+                if await self._has_visible_hcaptcha():
+                    logger.debug("Solving login challenge attempt {}/3", challenge_attempt)
+                    try:
+                        challenge_signal = await wait_for_challenge_signal(
+                            agent,
+                            context=f"login:{challenge_attempt}",
+                            timeout_seconds=(
+                                settings.EXECUTION_TIMEOUT + settings.RESPONSE_TIMEOUT + 5
+                            ),
+                        )
+                    except Exception:
+                        pass
 
                 try:
+                    if challenge_signal is ChallengeSignal.SUCCESS:
+                        # 留出页面收尾时间，避免把刚通过但尚未隐藏的题目再次送入求解器。
+                        await self.page.wait_for_timeout(2000)
                     await self._await_login_outcome(point_url, agent, timeout_seconds=25)
                     login_confirmed = True
                     break
@@ -766,7 +799,7 @@ class EpicAuthorization:
                             challenge_attempt + 1,
                         )
                         try:
-                            await self._await_login_outcome(point_url, agent, timeout_seconds=8)
+                            await self._await_login_outcome(point_url, agent, timeout_seconds=25)
                             login_confirmed = True
                             break
                         except PlaywrightTimeoutError:
