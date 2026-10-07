@@ -1681,3 +1681,25 @@
   - `_is_camoufox_bootstrap_error()` 增加对 camoufox 配置校验异常（`UnknownProperty`、`InvalidPropertyType`）的识别，使 `auto` 后端在该类失败时能降级到 Playwright Firefox，避免整次任务中断。
   - 静态核对确认 camoufox 0.5.8 的 `AsyncCamoufox` 导出与 `launch_options` 参数覆盖现有调用；`uv lock --check` 通过，`browser_context.py` 语法编译通过。
   - 验证限制：本机未安装 Ruff/Black，且项目不允许执行测试，未运行测试、模型请求或真实登录；本次修复的实际领取效果待下一次 Actions 运行确认。未提交的 `epic-logs-37145172233.zip` 为本次排查所用日志，保持原状。
+
+
+### 2026-10-07 修正 camoufox 0.5.x 的 screen 参数类型变更
+
+- 现象：
+  - 升级 camoufox 后重新运行 `37635438188`（2026-10-07 22:18）仍然失败，`error.log` 报 `AttributeError: 'Screen' object has no attribute 'as_conditions'`。
+  - 异常同样发生在浏览器启动阶段（`open_browser_context` → `AsyncCamoufox.__aenter__` → `launch_options` → `generate_fingerprint`），仍未进入登录与领取流程。上一轮的 `UnknownProperty` 未再出现，说明该问题已修复，失败点后移。
+- 根因判断：
+  - camoufox 0.5.x 移除了 BrowserForge 依赖、改用 fpgen，并在 `camoufox/fingerprints.py` 重新定义了同名的 `Screen` 类：字段与旧类一致，但新增 `as_conditions()` 用于把屏幕边界转成 fpgen 条件。
+  - `app/services/browser_context.py` 仍从 `browserforge.fingerprints` 导入旧类并传给 `screen` 参数，`generate_fingerprint` 调用 `screen.as_conditions()` 时抛 `AttributeError`。
+  - 上一轮升级的静态核对只比对了 `launch_options` 的参数名是否仍然存在，未核对 `screen` 参数的类型契约已被替换（同名不同类）。
+- 改动文件：
+  - `app/services/browser_context.py`
+  - `pyproject.toml`
+  - `uv.lock`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - `_camoufox_launch_options()` 删除 `screen` 参数及 `browserforge` 导入，屏幕边界交由 camoufox 自行推导：无显式 `screen` 时其内部使用 `get_screen_cons()`，在 CI 的 Xvfb 1920x1080 下等价于 `Screen(max_width=1920, max_height=1080)`，并保留原有的 `record_video_size` 与窗口尺寸设定。
+  - `browserforge` 在项目内仅此一处引用，hcaptcha-challenger 0.19.0 亦不引用它，故一并从 `pyproject.toml` 移除；`uv.lock` 重新解析为 108 个包（移除 `browserforge`、`apify-fingerprint-datapoints`）。
+  - 顺带静态核对其余入参在 0.5.8 的契约：`humanize`、`firefox_user_prefs`、`proxy`、`headless` 未变；`persistent_context`、`user_data_dir`、`record_video_*` 仍透传给 Playwright；`geoip=True` 由 `maxminddb`（`camoufox[geoip]` extra）承载，mmdb 缺失时会自动 `download_mmdb()`。
+  - 验证：`uv lock --check` 通过，`browser_context.py` 语法编译通过；并用临时环境装载 camoufox 0.5.8 实测 `generate_fingerprint()`，确认不再抛 `AttributeError`。
+  - 验证限制：未在 CI 等价环境（Xvfb、代理、真实账号）跑完整流程，也未运行仓库测试；实际领取结果仍需下一次 Actions 运行确认。

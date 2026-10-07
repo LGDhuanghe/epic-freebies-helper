@@ -86,9 +86,8 @@ def _browser_proxy_options() -> dict[str, str] | None:
 
 
 def _camoufox_launch_options(headless: bool | str, proxy: dict[str, str] | None) -> dict:
-    from browserforge.fingerprints import Screen
-
-    screen = Screen(max_width=1920, max_height=1080, min_height=1080, min_width=1920)
+    # Camoufox derives the screen bounds from the real display on its own; passing a
+    # BrowserForge Screen no longer works since 0.5.x replaced that class with its own.
     firefox_user_prefs = {"network.dns.disableIPv6": True, "network.trr.mode": 5}
     if proxy is None:
         firefox_user_prefs["network.proxy.type"] = 0
@@ -96,7 +95,6 @@ def _camoufox_launch_options(headless: bool | str, proxy: dict[str, str] | None)
     options = {
         "persistent_context": True,
         "user_data_dir": settings.user_data_dir_for("camoufox"),
-        "screen": screen,
         "record_video_dir": RECORD_DIR,
         "record_video_size": _VIEWPORT,
         "firefox_user_prefs": firefox_user_prefs,
