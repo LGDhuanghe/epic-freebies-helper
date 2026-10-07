@@ -127,6 +127,15 @@ def _playwright_launch_options(
 
 
 def _is_camoufox_bootstrap_error(err: Exception) -> bool:
+    # A Camoufox Python/browser version mismatch aborts inside config validation before
+    # launch; treat it as a bootstrap error so `auto` can still degrade to Playwright.
+    error_type = type(err)
+    if error_type.__module__.startswith("camoufox.") and error_type.__name__ in {
+        "UnknownProperty",
+        "InvalidPropertyType",
+    }:
+        return True
+
     message = str(err).lower()
     if isinstance(err, HTTPError):
         return "api.github.com/repos/daijro/camoufox/releases" in message

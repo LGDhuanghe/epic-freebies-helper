@@ -1658,3 +1658,26 @@
   - 定时表达式调整为 `20 15 * * 6`，对应 UTC 周六 15:20 / 北京时间周六 23:20；同步相关说明，保留手动触发和其他配置。
   - 本次未运行测试或实际触发工作流，实际调度效果待变更进入默认分支后确认。
   - 静态核对确认 cron、时区和文档一致，工作流除星期字段与对应注释外不变；`git diff --check` 通过，原有未提交改动保留，维护记录仅追加。
+
+
+### 2026-10-07 修复 Camoufox 配置校验导致的领取中断
+
+- 现象：
+  - GitHub Actions 运行 `37145172233`（2026-10-04 02:42 UTC）领取失败，`error.log` 报 `camoufox.exceptions.UnknownProperty: Unknown property navigator.appCodeName in config`。
+  - 异常发生在 `app/services/browser_context.py` 启动浏览器阶段（`open_browser_context` → `AsyncCamoufox.__aenter__` → `launch_options` → `validate_config`），任务未进入登录、加购与验证码流程，因此不是 Epic 侧的 24 小时限流。
+- 根因判断：
+  - 自 `uv.lock` 安装的 camoufox 0.4.11 自带 `browserforge.yml`，会把 BrowserForge 指纹里的 `appCodeName` 映射成配置项 `navigator.appCodeName`；而该版本的 `validate_config` 对不在浏览器属性白名单里的配置项直接抛 `UnknownProperty`（0.5.x 起改为打印提示并静默跳过）。
+  - 浏览器白名单来自已安装浏览器目录下的 `properties.json`。上游 `daijro/camoufox` 的 `settings/properties.json` 在 `v152.0.4-beta.29/30` 仍含 `navigator.appCodeName`，自 `v156.0.1-beta.32` 起已移除（属性总数由 108/109 降为 82）。
+  - `camoufox/pkgman.py` 的 `get_asset()` 只按 `beta.NN` 序号判断兼容（`MIN_VERSION='beta.19'`、`MAX_VERSION='1'`），既不区分 Firefox 主版本也不看 `prerelease` 标记，于是把 2026-10-03 发布的 `v156.0.1-beta.34` 当作受支持的最新版下载安装，造成 Python 包配置映射与浏览器能力脱节。
+  - `BROWSER_BACKEND=auto` 的降级未生效：`_is_camoufox_bootstrap_error()` 只匹配网络与下载类错误，未覆盖配置校验异常，异常被直接抛出。
+  - 时间线解释了此前的正常运行：152 系列 build 含该属性，而 156 系列从 2026-09-28 才开始发布。
+- 改动文件：
+  - `pyproject.toml`
+  - `uv.lock`
+  - `app/services/browser_context.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - `pyproject.toml` 显式声明 `camoufox>=0.5.5`，`uv.lock` 由 `uv lock --upgrade-package camoufox` 将 camoufox 由 0.4.11 更新至 0.5.8；新版本对未知属性静默跳过，并对 `removed` 属性给出提示。lock 中同时增删的 `aiohttp`/`geoip2`/`lxml`/`tqdm` 与新增的 `blessed`/`fpgen`/`inquirer`/`zstandard` 等均为 camoufox 0.5.x 自身依赖集变化，未单独调整其他依赖版本。
+  - `_is_camoufox_bootstrap_error()` 增加对 camoufox 配置校验异常（`UnknownProperty`、`InvalidPropertyType`）的识别，使 `auto` 后端在该类失败时能降级到 Playwright Firefox，避免整次任务中断。
+  - 静态核对确认 camoufox 0.5.8 的 `AsyncCamoufox` 导出与 `launch_options` 参数覆盖现有调用；`uv lock --check` 通过，`browser_context.py` 语法编译通过。
+  - 验证限制：本机未安装 Ruff/Black，且项目不允许执行测试，未运行测试、模型请求或真实登录；本次修复的实际领取效果待下一次 Actions 运行确认。未提交的 `epic-logs-37145172233.zip` 为本次排查所用日志，保持原状。
