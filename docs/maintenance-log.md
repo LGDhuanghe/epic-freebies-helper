@@ -1703,3 +1703,29 @@
   - 顺带静态核对其余入参在 0.5.8 的契约：`humanize`、`firefox_user_prefs`、`proxy`、`headless` 未变；`persistent_context`、`user_data_dir`、`record_video_*` 仍透传给 Playwright；`geoip=True` 由 `maxminddb`（`camoufox[geoip]` extra）承载，mmdb 缺失时会自动 `download_mmdb()`。
   - 验证：`uv lock --check` 通过，`browser_context.py` 语法编译通过；并用临时环境装载 camoufox 0.5.8 实测 `generate_fingerprint()`，确认不再抛 `AttributeError`。
   - 验证限制：未在 CI 等价环境（Xvfb、代理、真实账号）跑完整流程，也未运行仓库测试；实际领取结果仍需下一次 Actions 运行确认。
+
+
+### 2026-10-10 识别并有限交互登录前 Cloudflare 安全验证
+
+- 现象：
+  - 运行 `37644909122` 的第 1、2、4 次认证报登录表单等待超时，对应截图实际停在法语 Cloudflare 人机验证页，尚未出现 Epic 登录表单。
+- 根因判断：
+  - 登录前安全页检测仅匹配英文标题、正文，没有识别 Cloudflare 验证 iframe，也没有覆盖截图中的法语提示 `Encore une étape`。
+  - 原恢复分支会清 Cookie 并重新打开登录入口，不会尝试复选框交互，而且可能打断正在进行的验证。本次日志未命中该恢复分支。
+  - 该运行还存在 hCaptcha 求解失败以及最终 Epic 拒绝登录响应的问题，本次仅处理用户确认的 Cloudflare 识别与有限交互，不声称解决其余失败原因。
+- 改动文件：
+  - `app/services/epic_authorization_service.py`
+  - `docs/maintenance-log.md`
+- 处理结果：
+  - 优先按 `https://challenges.cloudflare.com/` 验证 frame 识别安全页，保留原英文检测并补充上述法语提示。
+  - 在原有 45 秒登录表单等待期间保持页面，不再从该等待流程清 Cookie、重新导航；只对 Cloudflare frame 内可见、可用且未勾选的复选框尝试点击，每次登录表单等待最多一次，包括点击报错的情况。
+  - 没有可交互复选框或已经勾选时继续等待；只有 Epic 邮箱输入框出现才返回成功，点击完成不代表验证通过。
+  - 识别到安全验证后仍未等到登录表单时，明确报告安全验证未完成，沿用现有登录异常截图和外层有界重试，不增加重试次数或等待时长。
+  - 移除等待函数不再使用的登录入口参数，同步更新两处调用；未改动 hCaptcha 逻辑。
+- 验证：
+  - Python 语法编译通过，未导入或执行应用；静态核对两处等待函数调用已匹配新签名。
+  - 修改区域 Black 检查通过，`git diff --check` 通过；Ruff 对比修改前后均为 10 条原有告警，无新增告警，未顺带修复无关问题。
+  - Ruff、Black 仅安装在临时目录用于静态检查，未修改项目依赖或锁文件。
+- 验证限制：
+  - 按仓库要求未运行测试，也未启动浏览器或发起真实登录。原日志仅包含截图，没有 Cloudflare 页面 DOM，无法离线确认该版本验证框是否向 Playwright 暴露可交互复选框。
+  - 若复选框不可定位、被封闭 Shadow DOM 隐藏或 Cloudflare 拒绝放行，仍会有界等待并报错；不使用猜测坐标强点，也不保证点击后一定通过验证。实际效果待后续运行确认。

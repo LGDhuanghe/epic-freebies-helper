@@ -254,6 +254,11 @@ class EpicAuthorization:
         return False
 
     async def _has_pre_login_security_check(self) -> bool:
+        if any(
+            frame.url.startswith("https://challenges.cloudflare.com/") for frame in self.page.frames
+        ):
+            return True
+
         with suppress(Exception):
             title = (await self.page.title()).lower()
             if "just a moment" in title:
@@ -266,6 +271,7 @@ class EpicAuthorization:
                 "one more step",
                 "please complete a security check to continue",
                 "verify you are human",
+                "encore une étape",
             )
         )
 
@@ -292,37 +298,54 @@ class EpicAuthorization:
 
         return False
 
-    async def _wait_for_login_form(self, point_url: str) -> None:
+    async def _wait_for_login_form(self) -> None:
         deadline = time.monotonic() + 45
-        recovery_attempts = 0
+        security_check_seen = False
+        checkbox_attempted = False
         email_input = self.page.locator("#email")
 
         while time.monotonic() < deadline:
             with suppress(Exception):
                 await expect(email_input).to_be_visible(timeout=1000)
+                if security_check_seen:
+                    logger.info("登录前安全验证结束，Epic 登录表单已出现")
                 return
 
             if await self._has_pre_login_security_check():
-                if recovery_attempts < 2:
-                    recovery_attempts += 1
-                    logger.warning(
-                        "Pre-login security page detected, clearing cookies and retrying login entry ({}/2) | url='{}'",
-                        recovery_attempts,
-                        self.page.url,
-                    )
-                    await self.page.context.clear_cookies()
-                    await self.page.goto(point_url, wait_until="domcontentloaded")
-                    continue
+                if not security_check_seen:
+                    security_check_seen = True
+                    logger.warning("检测到 Cloudflare/登录前安全验证，保持页面并等待验证结果")
 
-                logger.warning(
-                    "Pre-login security page still active after recovery attempts | url='{}'",
-                    self.page.url,
-                )
-                await self.page.wait_for_timeout(2000)
-                continue
+                if not checkbox_attempted:
+                    for frame in self.page.frames:
+                        if not frame.url.startswith("https://challenges.cloudflare.com/"):
+                            continue
+                        with suppress(PlaywrightError):
+                            checkbox = frame.get_by_role("checkbox").first
+                            if (
+                                not await checkbox.is_visible()
+                                or not await checkbox.is_enabled(timeout=500)
+                                or await checkbox.is_checked(timeout=500)
+                            ):
+                                continue
+
+                            # 每轮登录等待最多尝试点击一次，避免打断正在进行的验证。
+                            checkbox_attempted = True
+                            logger.info("尝试点击 Cloudflare 验证复选框，随后等待 Epic 登录表单")
+                            try:
+                                await checkbox.click(timeout=1000)
+                            except PlaywrightError as err:
+                                logger.warning(
+                                    "Cloudflare 复选框点击未确认，继续等待页面结果 | err={!r}", err
+                                )
+                            break
 
             await self.page.wait_for_timeout(500)
 
+        if security_check_seen:
+            raise PlaywrightTimeoutError(
+                "Cloudflare/登录前安全验证未完成：45 秒内未出现 Epic 登录表单"
+            )
         raise PlaywrightTimeoutError("Timed out waiting for Epic login form")
 
     async def _goto_claim_page(self, attempts: int = 3) -> None:
@@ -459,7 +482,7 @@ class EpicAuthorization:
                     )
                     await self.page.context.clear_cookies()
                     await self.page.goto(point_url, wait_until="domcontentloaded")
-                    await self._wait_for_login_form(point_url)
+                    await self._wait_for_login_form()
                     raise RuntimeError(error_code)
 
                 if self._is_two_factor_required_error(error_code):
@@ -741,7 +764,7 @@ class EpicAuthorization:
 
             point_url = "https://www.epicgames.com/account/personal?lang=en-US&productName=egs&sessionInvalidated=true"
             await self.page.goto(point_url, wait_until="domcontentloaded")
-            await self._wait_for_login_form(point_url)
+            await self._wait_for_login_form()
 
             # 1. 使用电子邮件地址登录
             email_input = self.page.locator("#email")
