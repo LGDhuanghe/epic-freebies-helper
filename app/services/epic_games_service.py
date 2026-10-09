@@ -188,6 +188,7 @@ class EpicAgent:
         deadline = time.monotonic() + timeout_seconds
         account_probe_at = time.monotonic() + 8
         account_probe_attempted = False
+        store_reported_logged_out = False
 
         while time.monotonic() < deadline:
             if self._needs_privacy_policy_correction():
@@ -199,10 +200,17 @@ class EpicAgent:
                 raise EpicManualActionRequiredError(self._mfa_setup_prompt_message(self.page.url))
 
             status = await self._get_login_status(timeout_ms=1500)
-            if status in {"true", "false"}:
+            if status == "true":
                 return status
+            if status == "false":
+                store_reported_logged_out = True
 
-            if not account_probe_attempted and time.monotonic() >= account_probe_at:
+            # 等待商店登录态稳定，但不以账号会话覆盖明确的未登录状态。
+            if (
+                not store_reported_logged_out
+                and not account_probe_attempted
+                and time.monotonic() >= account_probe_at
+            ):
                 account_probe_attempted = True
                 logger.warning(
                     "Epic navigation login marker did not appear; probing account session via order history."
@@ -215,6 +223,9 @@ class EpicAgent:
 
         if self._needs_mfa_setup_prompt():
             raise EpicManualActionRequiredError(self._mfa_setup_prompt_message(self.page.url))
+
+        if store_reported_logged_out:
+            return "false"
 
         if await self._has_account_session():
             return "true"

@@ -703,6 +703,8 @@ class EpicAuthorization:
         deadline = time.monotonic() + timeout_seconds
         account_probe_at = time.monotonic() + 8
         account_probe_attempted = False
+        store_login_attempted = False
+        store_reported_logged_out = False
 
         while time.monotonic() < deadline:
             if self._needs_privacy_policy_correction():
@@ -718,16 +720,27 @@ class EpicAuthorization:
                 await self._goto_claim_page()
                 continue
 
-            status = await self._get_login_status(timeout_ms=1500)
+            status = await self._get_login_status(timeout_ms=1500, warn_timeout=False)
             if status == "true":
                 return
             if status == "false":
-                raise RuntimeError(
-                    "Epic store still reports isloggedin=false after authentication. "
-                    f"current_url={self.page.url}"
-                )
+                store_reported_logged_out = True
+                if not store_login_attempted and time.monotonic() >= account_probe_at:
+                    store_login_attempted = True
+                    logger.warning("账号认证后商店仍未登录，保留 Cookie 并尝试一次商店登录入口")
+                    try:
+                        await self.page.locator("egs-navigation").get_by_text(
+                            "Sign in", exact=True
+                        ).click(timeout=5000, no_wait_after=True)
+                    except PlaywrightTimeoutError:
+                        logger.warning("商店登录入口点击超时，继续等待商店会话确认")
 
-            if not account_probe_attempted and time.monotonic() >= account_probe_at:
+            # 账号接口只能兜底缺失的导航，不能覆盖商店明确给出的未登录状态。
+            if (
+                not store_reported_logged_out
+                and not account_probe_attempted
+                and time.monotonic() >= account_probe_at
+            ):
                 account_probe_attempted = True
                 logger.warning(
                     "Epic navigation login marker did not appear after authentication; "
@@ -741,6 +754,12 @@ class EpicAuthorization:
 
         if self._needs_mfa_setup_prompt():
             raise EpicManualActionRequiredError(self._mfa_setup_prompt_message(self.page.url))
+
+        if store_reported_logged_out:
+            raise RuntimeError(
+                f"账号认证后等待 {timeout_seconds} 秒仍未确认商店登录态；"
+                f"商店曾返回 isloggedin=false，不能仅凭账号会话继续领取。当前页面：{self.page.url}"
+            )
 
         if await self._has_account_session():
             return
